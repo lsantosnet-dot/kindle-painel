@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Painel para Kindle Paperwhite 3 (1072x1448): hora, clima de Belo Horizonte e manchetes.
+"""Painel para Kindle Paperwhite 3 (1072x1448): calendario, feriados e clima do dia de Belo Horizonte.
+
+Sem hora no corpo do painel (so o rodape informa quando a imagem foi gerada).
 
 Uso:
   python dash_server.py              -> sobe o servidor na porta 8000 (http://IP:8000/dash.png)
@@ -15,8 +17,8 @@ import sys
 import threading
 import time
 import urllib.request
-import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta, timezone
+import calendar
+from datetime import date, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from PIL import Image, ImageDraw, ImageFont
@@ -26,13 +28,7 @@ W, H = 1072, 1448
 LAT, LON = -19.9167, -43.9345          # Belo Horizonte
 CIDADE = "Belo Horizonte"
 PORT = 8000
-NEWS_FEEDS = [
-    "https://g1.globo.com/rss/g1/minas-gerais/",
-    "https://g1.globo.com/rss/g1/",
-]
-MAX_NEWS = 6
 WEATHER_TTL = 10 * 60
-NEWS_TTL = 15 * 60
 
 try:
     from zoneinfo import ZoneInfo
@@ -103,60 +99,32 @@ def http_get(url, timeout=12):
 def fetch_weather():
     url = (
         "https://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s"
-        "&current=temperature_2m,apparent_temperature,relative_humidity_2m,"
-        "weather_code,wind_speed_10m"
         "&daily=weather_code,temperature_2m_max,temperature_2m_min,"
-        "precipitation_probability_max"
-        "&timezone=America%%2FSao_Paulo&forecast_days=4" % (LAT, LON)
+        "precipitation_probability_max,sunrise,sunset"
+        "&timezone=America%%2FSao_Paulo&forecast_days=1" % (LAT, LON)
     )
     return json.loads(http_get(url).decode("utf-8"))
 
 
-def fetch_news():
-    for feed in NEWS_FEEDS:
-        try:
-            root = ET.fromstring(http_get(feed))
-            titles = []
-            for item in root.iter("item"):
-                t = (item.findtext("title") or "").strip()
-                if t and t not in titles:
-                    titles.append(t)
-                if len(titles) >= MAX_NEWS:
-                    break
-            if titles:
-                return titles
-        except Exception as e:
-            print("Falha no feed", feed, e)
-    return []
-
-
 SAMPLE_WEATHER = {
-    "current": {"temperature_2m": 24.3, "apparent_temperature": 25.1,
-                "relative_humidity_2m": 62, "weather_code": 2, "wind_speed_10m": 11.4},
     "daily": {
-        "time": ["2026-11-08", "2026-11-09", "2026-11-10", "2026-11-11"],
-        "weather_code": [2, 63, 95, 1],
-        "temperature_2m_max": [28.1, 26.0, 25.2, 29.4],
-        "temperature_2m_min": [17.5, 18.1, 18.9, 17.0],
-        "precipitation_probability_max": [20, 80, 90, 10],
+        "time": ["2026-11-08"],
+        "weather_code": [2],
+        "temperature_2m_max": [28.1],
+        "temperature_2m_min": [17.5],
+        "precipitation_probability_max": [20],
+        "sunrise": ["2026-11-08T05:21"],
+        "sunset": ["2026-11-08T18:09"],
     },
 }
-SAMPLE_NEWS = [
-    "Prefeitura anuncia novo esquema de trânsito na Avenida do Contorno durante obras",
-    "Chuva forte deve atingir a Região Metropolitana de BH na segunda-feira",
-    "Atlético-MG vence no Mineirão e se aproxima da zona de classificação",
-    "Governo de Minas divulga calendário de pagamento do funcionalismo",
-    "Aeroporto de Confins registra recorde de passageiros no mês",
-    "Feira de artesanato reúne mais de 300 expositores na Praça da Liberdade",
-]
 
-_state = {"weather": None, "w_time": 0, "news": None, "n_time": 0}
+_state = {"weather": None, "w_time": 0}
 _lock = threading.Lock()
 
 
 def get_data(sample=False):
     if sample:
-        return SAMPLE_WEATHER, SAMPLE_NEWS
+        return SAMPLE_WEATHER
     now = time.time()
     with _lock:
         if _state["weather"] is None or now - _state["w_time"] > WEATHER_TTL:
@@ -165,15 +133,41 @@ def get_data(sample=False):
                 _state["w_time"] = now
             except Exception as e:
                 print("Falha no clima:", e)
-        if _state["news"] is None or now - _state["n_time"] > NEWS_TTL:
-            try:
-                n = fetch_news()
-                if n:
-                    _state["news"] = n
-                    _state["n_time"] = now
-            except Exception as e:
-                print("Falha nas notícias:", e)
-        return _state["weather"], _state["news"]
+        return _state["weather"]
+
+
+# ---------------- Feriados nacionais ----------------
+def easter(y):
+    a = y % 19
+    b, c = divmod(y, 100)
+    d, e = divmod(b, 4)
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = divmod(c, 4)
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    mo, da = divmod(h + l - 7 * m + 114, 31)
+    return date(y, mo, da + 1)
+
+
+def feriados(y):
+    p = easter(y)
+    return {
+        date(y, 1, 1): "Confraternização Universal", date(y, 4, 21): "Tiradentes",
+        date(y, 5, 1): "Dia do Trabalho", date(y, 9, 7): "Independência",
+        date(y, 10, 12): "N. Sra. Aparecida", date(y, 11, 2): "Finados",
+        date(y, 11, 15): "Proclamação da República", date(y, 11, 20): "Consciência Negra",
+        date(y, 12, 25): "Natal", p - timedelta(48): "Carnaval", p - timedelta(47): "Carnaval",
+        p - timedelta(2): "Sexta-feira Santa", p + timedelta(60): "Corpus Christi",
+    }
+
+
+def proximo_feriado(hoje):
+    cand = {**feriados(hoje.year), **feriados(hoje.year + 1)}
+    for dt in sorted(cand):
+        if dt >= hoje:
+            return dt, cand[dt]
 
 
 # ---------------- Desenho ----------------
@@ -242,82 +236,73 @@ def icon(d, kind, cx, cy, s):
             d.line(pts, fill=0, width=max(4, s // 12), joint="curve")
 
 
-def render(weather, news, battery=None, now=None):
+def render(weather, battery=None, now=None):
     now = now or datetime.now(TZ)
+    hoje = now.date()
     img = Image.new("L", (W, H), 255)
     d = ImageDraw.Draw(img)
     pad = 56
 
-    # --- Data + hora ---
-    data = "%s, %d de %s" % (DIAS[now.weekday()].capitalize(), now.day, MESES[now.month - 1])
-    centered(d, 36, data, font(42))
-    centered(d, 84, now.strftime("%H:%M"), font(270, True))
-    d.line([pad, 400, W - pad, 400], fill=0, width=4)
+    # --- Mes, dia e dia da semana ---
+    centered(d, 40, MESES[hoje.month - 1].upper() + " " + str(hoje.year), font(40, True), fill=90)
+    centered(d, 70, str(hoje.day), font(330, True))
+    centered(d, 450, DIAS[hoje.weekday()].capitalize(), font(70, True))
+    d.line([pad, 550, W - pad, 550], fill=0, width=4)
 
-    # --- Clima atual ---
-    y0 = 420
-    txt(d, (pad, y0), CIDADE.upper(), font(30, True), fill=90)
+    # --- Mini calendario (domingo primeiro) ---
+    top = 570
+    cw = (W - 2 * pad) // 7
+    ch = 58
+    for i, s in enumerate(["D", "S", "T", "Q", "Q", "S", "S"]):
+        centered(d, top, s, font(30, True), fill=90, cx=pad + cw * i + cw // 2)
+    fer = feriados(hoje.year)
+    for r, sem in enumerate(calendar.Calendar(firstweekday=6).monthdayscalendar(hoje.year, hoje.month)):
+        for i, n in enumerate(sem):
+            if not n:
+                continue
+            cx = pad + cw * i + cw // 2
+            cy = top + 52 + r * ch
+            eh_fer = date(hoje.year, hoje.month, n) in fer
+            if n == hoje.day:
+                d.rounded_rectangle([cx - 32, cy - 4, cx + 32, cy + 50], 10, fill=0)
+                centered(d, cy, str(n), font(36, True), fill=255, cx=cx)
+            else:
+                centered(d, cy, str(n), font(36, eh_fer), fill=150 if i in (0, 6) else 0, cx=cx)
+                if eh_fer:
+                    d.ellipse([cx - 4, cy + 44, cx + 4, cy + 52], fill=0)
+    yb = top + 52 + 6 * ch + 5
+    d.line([pad, yb, W - pad, yb], fill=170, width=2)
+
+    # --- Semana, dia do ano, proximo feriado ---
+    txt(d, (pad, yb + 20), "Semana %d  ·  Dia %d do ano" % (hoje.isocalendar()[1],
+        hoje.timetuple().tm_yday), font(34), fill=40)
+    dt, nome = proximo_feriado(hoje)
+    falta = (dt - hoje).days
+    txt(d, (pad, yb + 66), "Próximo feriado: %s" % nome, font(34, True))
+    quando = "hoje!" if falta == 0 else ("amanhã" if falta == 1 else "em %d dias" % falta)
+    txt(d, (pad, yb + 110), "%s, %d/%d — %s" % (DIAS_CURTO[dt.weekday()], dt.day, dt.month, quando),
+        font(34), fill=40)
+
+    # --- Clima do dia ---
+    yc = yb + 165
+    d.line([pad, yc, W - pad, yc], fill=0, width=4)
     if weather:
-        cur = weather["current"]
-        desc, kind = wmo(cur["weather_code"])
-        icon(d, kind, pad + 110, y0 + 165, 180)
-        temp = "%d°" % round(cur["temperature_2m"])
-        txt(d, (pad + 240, y0 + 50), temp, font(170, True), fill=0)
-        dl = wrap(d, desc, font(34, True), W - pad - (pad + 600))
-        for k, ln in enumerate(dl[:2]):
-            txt(d, (pad + 600, y0 + 55 + k * 40), ln, font(34, True), fill=0)
-        yy = y0 + 55 + len(dl[:2]) * 40 + 8
-        txt(d, (pad + 600, yy),
-               "Sensação %d°" % round(cur["apparent_temperature"]), font(32), fill=40)
-        txt(d, (pad + 600, yy + 42),
-               "Umidade %d%%" % round(cur["relative_humidity_2m"]), font(34), fill=40)
-        txt(d, (pad + 600, yy + 84),
-               "Vento %d km/h" % round(cur["wind_speed_10m"]), font(34), fill=40)
-
-        # previsao 3 dias
-        daily = weather["daily"]
-        colw = (W - 2 * pad) // 3
-        ytop = y0 + 290
-        d.line([pad, ytop - 12, W - pad, ytop - 12], fill=170, width=2)
-        for i in range(1, 4):
-            if i >= len(daily["time"]):
-                break
-            dt = datetime.strptime(daily["time"][i], "%Y-%m-%d")
-            cx = pad + colw * (i - 1) + colw // 2
-            centered(d, ytop, DIAS_CURTO[dt.weekday()], font(34, True), cx=cx)
-            icon(d, wmo(daily["weather_code"][i])[1], cx, ytop + 100, 90)
-            centered(d, ytop + 160, "%d° / %d°" % (round(daily["temperature_2m_max"][i]),
-                                                  round(daily["temperature_2m_min"][i])),
-                     font(34), cx=cx)
-            centered(d, ytop + 205, "chuva %d%%" % daily["precipitation_probability_max"][i],
-                     font(28), fill=70, cx=cx)
-        news_top = ytop + 250
+        dly = weather["daily"]
+        desc, kind = wmo(dly["weather_code"][0])
+        icon(d, kind, pad + 80, yc + 100, 120)
+        txt(d, (pad + 190, yc + 38), CIDADE, font(28, True), fill=90)
+        txt(d, (pad + 190, yc + 76), desc, font(40, True))
+        txt(d, (pad + 190, yc + 128), "máx %d°  ·  mín %d°  ·  chuva %d%%" % (
+            round(dly["temperature_2m_max"][0]), round(dly["temperature_2m_min"][0]),
+            dly["precipitation_probability_max"][0]), font(34), fill=40)
+        txt(d, (pad + 190, yc + 176), "Nascer do sol %s   ·   Pôr do sol %s" % (
+            dly["sunrise"][0][-5:], dly["sunset"][0][-5:]), font(34), fill=40)
     else:
-        centered(d, y0 + 150, "Sem dados de clima", font(44), fill=90)
-        news_top = y0 + 300
-
-    # --- Manchetes ---
-    d.line([pad, news_top, W - pad, news_top], fill=0, width=4)
-    txt(d, (pad, news_top + 18), "MANCHETES", font(30, True), fill=90)
-    y = news_top + 66
-    footer_y = H - 70
-    f = font(34)
-    if news:
-        for n in news:
-            lines = wrap(d, n, f, W - 2 * pad - 30)[:3]
-            block = len(lines) * 41 + 20
-            if y + block > footer_y - 10:
-                break
-            d.ellipse([pad, y + 14, pad + 12, y + 26], fill=0)
-            for ln in lines:
-                txt(d, (pad + 30, y), ln, font=f, fill=0)
-                y += 41
-            y += 20
-    else:
-        txt(d, (pad, y), "Sem notícias no momento.", font=f, fill=90)
+        txt(d, (pad, yc + 60), "Sem dados de clima", font(44), fill=90)
 
     # --- Rodape ---
-    rod = "Atualizado às %s" % now.strftime("%H:%M")
+    footer_y = H - 70
+    rod = "Última atualização: %s" % now.strftime("%d/%m/%Y %H:%M")
     if battery:
         rod += "   ·   Bateria %s%%" % battery
     d.line([pad, footer_y, W - pad, footer_y], fill=170, width=2)
@@ -337,8 +322,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
             return
         battery = self.headers.get("X-Kindle-Battery")
-        weather, news = get_data()
-        data = png_bytes(render(weather, news, battery))
+        data = png_bytes(render(get_data(), battery))
         self.send_response(200)
         self.send_header("Content-Type", "image/png")
         self.send_header("Content-Length", str(len(data)))
@@ -357,15 +341,13 @@ def main():
     if "--out" in sys.argv:  # modo GitHub Actions: gera o arquivo e sai
         out = sys.argv[sys.argv.index("--out") + 1]
         os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
-        weather, news = get_data()
-        render(weather, news).save(out)
+        render(get_data()).save(out)
         print("Salvo:", out)
         return
     if "--sample" in sys.argv or "--preview" in sys.argv:
         sample = "--sample" in sys.argv
-        weather, news = get_data(sample)
         out = os.path.join(here, "preview.png")
-        render(weather, news, battery="87").save(out)
+        render(get_data(sample), battery="87").save(out)
         print("Salvo:", out)
         return
     print("Servidor no ar. Teste no navegador: http://localhost:%d/dash.png" % PORT)

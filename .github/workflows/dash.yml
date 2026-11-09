@@ -1,7 +1,7 @@
 name: Gerar painel
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "7 */3 * * *"  # a cada 3h (inclui 00:07 de Brasília); o painel só muda por dia
   workflow_dispatch:
 permissions:
   contents: read

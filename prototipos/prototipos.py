@@ -142,6 +142,7 @@ def proto_a(hoje, w):
     txt(d, (PAD + 190, yc + 38), "%s" % CIDADE, font(28, True), fill=90)
     txt(d, (PAD + 190, yc + 76), desc, font(40, True))
     txt(d, (PAD + 190, yc + 128), "máx %d°  ·  mín %d°  ·  chuva %d%%" % (mx, mn, ch_), font(34), fill=40)
+    txt(d, (PAD + 190, yc + 176), "Nascer do sol %s   ·   Pôr do sol %s" % (EXTRA["nascer"], EXTRA["por"]), font(34), fill=40)
     rodape(d, hoje)
     return img
 

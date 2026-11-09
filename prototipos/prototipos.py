@@ -91,7 +91,8 @@ def base(hoje):
 def rodape(d, hoje, extra=""):
     y = H - 70
     d.line([PAD, y, W - PAD, y], fill=170, width=2)
-    txt(d, (PAD, y + 16), "Painel de %02d/%02d/%d%s" % (hoje.day, hoje.month, hoje.year, extra),
+    agora = datetime.now(TZ)
+    txt(d, (PAD, y + 16), "Última atualização: %s%s" % (agora.strftime("%d/%m/%Y %H:%M"), extra),
         font(28), fill=90)
 
 def clima_hoje(w):

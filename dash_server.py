@@ -99,6 +99,7 @@ def http_get(url, timeout=12):
 def fetch_weather():
     url = (
         "https://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s"
+        "&current=temperature_2m"
         "&daily=weather_code,temperature_2m_max,temperature_2m_min,"
         "precipitation_probability_max,sunrise,sunset"
         "&timezone=America%%2FSao_Paulo&forecast_days=1" % (LAT, LON)
@@ -107,6 +108,7 @@ def fetch_weather():
 
 
 SAMPLE_WEATHER = {
+    "current": {"temperature_2m": 24.3},
     "daily": {
         "time": ["2026-11-08"],
         "weather_code": [2],
@@ -295,6 +297,11 @@ def render(weather, battery=None, now=None):
         txt(d, (pad + 190, yc + 128), "máx %d°  ·  mín %d°  ·  chuva %d%%" % (
             round(dly["temperature_2m_max"][0]), round(dly["temperature_2m_min"][0]),
             dly["precipitation_probability_max"][0]), font(34), fill=40)
+        cur = (weather.get("current") or {}).get("temperature_2m")
+        if cur is not None:
+            right = W - pad
+            d.text((right, yc + 36), "AGORA", font=font(26, True), fill=90, anchor="ra")
+            d.text((right, yc + 62), "%d°" % round(cur), font=font(84, True), anchor="ra")
         txt(d, (pad + 190, yc + 176), "Nascer do sol %s   ·   Pôr do sol %s" % (
             dly["sunrise"][0][-5:], dly["sunset"][0][-5:]), font(34), fill=40)
     else:
